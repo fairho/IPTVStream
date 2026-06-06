@@ -1,122 +1,117 @@
 #!/bin/sh
 # Script d'installation pour IPTVStream Plugin
-# Compatible avec toutes les images Enigma2 (OpenPLi, OpenATV, OpenVision, etc.)
+# Version 1.0.0 - Final
+# Compatible avec toutes les images Enigma2
+# Support : wget, curl, opkg
 
 set -e
 
-# Couleurs pour les messages
+# Couleurs
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # Variables
 PLUGIN_NAME="IPTVStream"
 PLUGIN_VERSION="1.0.0"
+GITHUB_USER="fairho"
+GITHUB_REPO="IPTVStream"
+GITHUB_BRANCH="main"
+GITHUB_URL="https://github.com/${GITHUB_USER}/${GITHUB_REPO}/archive/refs/heads/${GITHUB_BRANCH}.zip"
 PLUGIN_DIR="/usr/lib/enigma2/python/Plugins/Extensions/IPTVStream"
-CONTROL_DIR="/CONTROL"
-TMP_DIR="/tmp/IPTVStream"
+TMP_DIR="/tmp/IPTVStream_install"
+LOG_FILE="/tmp/IPTVStream_install.log"
+
+# Initialisation du log
+echo "=== IPTVStream Installation Log ===" > ${LOG_FILE}
+echo "Date: $(date)" >> ${LOG_FILE}
+echo "Version: ${PLUGIN_VERSION}" >> ${LOG_FILE}
+echo "==================================" >> ${LOG_FILE}
 
 # Fonctions
-print_message() {
+log() {
+    echo "[$(date '+%H:%M:%S')] $1" >> ${LOG_FILE}
+}
+
+print_msg() {
     echo -e "${BLUE}[${PLUGIN_NAME}]${NC} $1"
+    log "$1"
 }
 
-print_success() {
+print_ok() {
     echo -e "${GREEN}[✓]${NC} $1"
+    log "OK: $1"
 }
 
-print_error() {
+print_err() {
     echo -e "${RED}[✗]${NC} $1"
+    log "ERREUR: $1"
 }
 
-print_warning() {
+print_warn() {
     echo -e "${YELLOW}[!]${NC} $1"
+    log "ATTENTION: $1"
 }
 
+# Vérification des droits root
 check_root() {
     if [ "$(id -u)" != "0" ]; then
-        print_error "Ce script doit être exécuté en tant que root (sudo)"
+        print_err "Ce script doit être exécuté en tant que root"
+        echo ""
+        echo "Utilisation:"
+        echo "  sudo sh installer.sh"
+        echo "  ou"
+        echo "  sh installer.sh"
+        echo ""
         exit 1
     fi
+    print_ok "Permissions root vérifiées"
 }
 
-check_enigma2() {
-    if [ ! -d "/usr/lib/enigma2" ]; then
-        print_error "Enigma2 n'est pas installé sur ce système"
-        exit 1
-    fi
-    print_success "Enigma2 détecté"
-}
-
-create_directories() {
-    print_message "Création des répertoires..."
-    mkdir -p ${PLUGIN_DIR}
-    mkdir -p ${TMP_DIR}
-    print_success "Répertoires créés"
-}
-
-download_plugin() {
-    print_message "Téléchargement du plugin depuis GitHub..."
+# Vérification du système
+check_system() {
+    print_msg "Vérification du système..."
     
-    # Télécharger depuis GitHub
+    # Vérifier Enigma2
+    if [ -d "/usr/lib/enigma2" ]; then
+        print_ok "Enigma2 détecté dans /usr/lib/enigma2"
+    elif [ -f "/usr/bin/enigma2" ]; then
+        print_ok "Enigma2 détecté dans /usr/bin"
+    else
+        print_warn "Enigma2 non détecté"
+        print_msg "Installation quand même... (vérifiez votre système)"
+    fi
+    
+    # Vérifier Python
+    if command -v python3 >/dev/null 2>&1; then
+        print_ok "Python 3 détecté"
+    elif command -v python >/dev/null 2>&1; then
+        print_ok "Python détecté"
+    else
+        print_warn "Python non détecté, installation..."
+        opkg update >/dev/null 2>&1 || true
+        opkg install python3 >/dev/null 2>&1 || true
+    fi
+    
+    # Vérifier wget
     if command -v wget >/dev/null 2>&1; then
-        wget -q --no-check-certificate "https://github.com/fairho/IPTVStream/archive/main.zip" -O ${TMP_DIR}/plugin.zip
-    elif command -v curl >/dev/null 2>&1; then
-        curl -sL "https://github.com/fairho/IPTVStream/archive/main.zip" -o ${TMP_DIR}/plugin.zip
+        print_ok "wget détecté"
     else
-        print_error "wget ou curl est requis pour le téléchargement"
-        exit 1
+        print_warn "wget non détecté, installation..."
+        opkg install wget >/dev/null 2>&1 || true
     fi
     
-    if [ -f "${TMP_DIR}/plugin.zip" ]; then
-        print_success "Plugin téléchargé"
-    else
-        print_error "Échec du téléchargement"
-        exit 1
-    fi
-}
-
-extract_plugin() {
-    print_message "Extraction du plugin..."
-    
+    # Vérifier unzip
     if command -v unzip >/dev/null 2>&1; then
-        unzip -q ${TMP_DIR}/plugin.zip -d ${TMP_DIR}
+        print_ok "unzip détecté"
     else
-        print_error "unzip est requis pour l'extraction"
-        exit 1
+        print_warn "unzip non détecté, installation..."
+        opkg install unzip >/dev/null 2>&1 || true
     fi
-    
-    # Copier les fichiers
-    cp -r ${TMP_DIR}/IPTVStream-main/usr/* /usr/
-    print_success "Plugin extrait et copié"
-}
 
-install_dependencies() {
-    print_message "Installation des dépendances..."
-    
-    # Vérifier les dépendances Python
-    if [ -f "/usr/bin/python" ]; then
-        print_success "Python détecté"
-    else
-        print_warning "Python non trouvé, tentative d'installation..."
-        opkg update
-        opkg install python3
-    fi
-    
-    # Nettoyer le cache Python
-    find ${PLUGIN_DIR} -name "*.pyc" -exec rm -f {} \;
-    find ${PLUGIN_DIR} -name "__pycache__" -type d -exec rm -rf {} \;
-    
-    print_success "Dépendances installées"
-}
 
-set_permissions() {
-    print_message "Configuration des permissions..."
-    
-    chmod -R 755 ${PLUGIN_DIR}
-    chmod 644 ${PLUGIN_DIR}/*.py
-    chmod 644 ${PLUGIN_DIR}/plugin.png
-    
-    print_success "Permissions
+
+   
+     
